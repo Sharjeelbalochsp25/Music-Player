@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="ONDO is a listening archive of twelve fictional records, 1998–2026.">
+  <meta name="theme-color" content="#ECE8E0">
+  <title>ONDO — The Sound Archive</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23ece8e0'/%3E%3Ccircle cx='16' cy='16' r='11' fill='%231f3fb0'/%3E%3Ccircle cx='16' cy='16' r='4' fill='%23ece8e0'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=Newsreader:ital,opsz,wght@0,6..72,400;1,6..72,400&family=Noto+Sans+JP:wght@500;800;900&display=swap">
+  <link rel="stylesheet" href="ondo.css">
+  <script src="catalog.js" defer></script>
+  <script src="audio.js" defer></script>
+  <script src="ondo.js" defer></script>
+</head>
+<body>
+  <header class="masthead">
+    <button class="brand" data-action="discover" aria-label="ONDO home"><strong>ONDO<span>®</span></strong><i></i><small>THE SOUND<br>ARCHIVE</small></button>
+    <nav class="primary" aria-label="Main navigation">
+      <button data-action="discover" aria-current="page">Discover</button>
+      <button data-view="playlists">Playlists</button><button data-view="artists">Artists</button><button data-view="about">About</button>
+    </nav>
+    <div class="header-controls"><button class="icon-button" data-view="search" aria-label="Search" data-icon="search"></button><button class="icon-button menu-trigger" data-view="menu" aria-label="Open menu" data-icon="menu"></button></div>
+  </header>
+  <main class="discovery" id="discovery">
+    <div class="filters">
+      <nav id="genres" aria-label="Filter by genre"></nav>
+      <span class="collection-label"><i></i> VOL. 01 <span>/</span> 1998–2026</span>
+    </div>
+    <section class="archive" aria-label="Record archive">
+      <div class="kanji kanji-left" lang="ja" aria-hidden="true">音楽</div>
+      <div class="kanji kanji-right" lang="ja" aria-hidden="true">の記憶</div>
+      <div class="archive-key" aria-hidden="true"><span>THE RECORD<br>COLLECTION</span><i></i><span lang="ja">音の記憶</span></div>
+      <div class="archive-count" aria-hidden="true"><span id="archive-count">06 / 12</span><i></i><span>STEREO<br>33⅓ RPM</span></div>
+      <div id="stage" class="stage" aria-label="Browse record sleeves">
+        <div class="sleeve-shadow"></div><div id="records" class="records"></div>
+        <button class="floating icon-button" id="floating" data-action="featured-play" aria-label="Play selected album"></button>
+      </div>
+      <div class="feature">
+        <button class="archive-arrow icon-button" data-action="previous-album" aria-label="Previous album" data-icon="left"></button>
+        <div class="caption" id="caption"></div>
+        <button class="archive-arrow icon-button" data-action="next-album" aria-label="Next album" data-icon="right"></button>
+      </div>
+      <div class="browse-hint" aria-hidden="true"><span></span> DRAG TO BROWSE <span></span></div>
+    </section>
+    <div class="base">
+      <section class="player" aria-label="Music player">
+        <div class="now-playing">
+          <button class="thumbnail" id="player-cover" data-view="now" aria-label="Open expanded player"></button>
+          <div class="now-text"><button id="player-track" data-view="now"></button><button id="player-artist"></button></div>
+          <span class="equalizer" aria-hidden="true"><i></i><i></i><i></i></span>
+          <button class="icon-button save-track" id="player-save" data-action="save-current" aria-label="Save track" data-icon="heart"></button>
+        </div>
+        <div class="transport">
+          <div class="transport-buttons">
+            <button class="icon-button previous" data-action="previous-track" aria-label="Previous track" data-icon="previous"></button>
+            <button class="icon-button primary-play" data-action="toggle" aria-label="Play" data-icon="play"></button>
+            <button class="icon-button" data-action="next-track" aria-label="Next track" data-icon="next"></button>
+          </div>
+          <div class="progress"><time data-el="elapsed">0:00</time><input data-el="seek" type="range" min="0" step=".1" value="0" aria-label="Seek through track"><time data-el="duration"></time></div>
+        </div>
+        <div class="player-options">
+          <button class="icon-button" data-action="shuffle" aria-label="Shuffle" aria-pressed="false" data-icon="shuffle"></button>
+          <button class="icon-button" data-action="repeat" aria-label="Repeat off" aria-pressed="false" data-icon="repeat"></button>
+          <button class="icon-button" data-action="mute" aria-label="Mute" data-icon="volume"></button>
+          <input data-el="volume" type="range" min="0" max="1" step=".01" value=".65" aria-label="Volume">
+        </div>
+      </section>
+      <div class="timeline" id="timeline"><span class="timeline-title">RELEASE YEAR</span><div class="timeline-scale" id="timeline-scale"><span id="year-marker" class="year-marker"></span></div></div>
+      <footer><span>© ONDO — THE SOUND ARCHIVE</span><span>SOUND IS MEMORY <span class="footer-slash">/</span> <span lang="ja">音の記憶</span></span></footer>
+    </div>
+  </main>
+  <dialog id="sheet" class="sheet" aria-labelledby="sheet-title">
+    <header class="sheet-top">
+      <div><button id="close-sheet" class="outline-button" data-action="close">Close <span lang="ja">/ 閉じる</span></button><button id="back-sheet" class="outline-button" data-action="back">← Back</button></div>
+      <span>ONDO <i></i> THE SOUND ARCHIVE</span>
+    </header>
+    <div id="sheet-content" class="sheet-content"></div>
+    <div class="sheet-player"><span id="sheet-track"></span><button class="icon-button primary-play" data-action="toggle" aria-label="Play" data-icon="play"></button><button class="icon-button" data-action="next-track" aria-label="Next track" data-icon="next"></button><button class="icon-button" data-view="now" aria-label="Expanded player" data-icon="expand"></button></div>
+  </dialog>
+  <div class="cursor" id="cursor" aria-hidden="true"><i></i><span></span></div>
+  <div class="status" id="status" role="status"></div>
+</body>
+</html>
