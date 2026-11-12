@@ -14,9 +14,13 @@ class ArchiveAudio {
     this.voices = new Set();
     this.context = null;
     this.track = null;
+    this.media = new Audio();
+    this.media.preload = 'metadata';
   }
 
-  async prepare(volume) {
+  async prepare(volume, track) {
+    this.media.volume = volume;
+    if (track?.previewUrl) return;
     if (!this.context) {
       const Audio = window.AudioContext || window.webkitAudioContext;
       if (!Audio) throw new Error('Web Audio unavailable');
@@ -41,12 +45,18 @@ class ArchiveAudio {
   }
 
   volume(value) {
+    this.media.volume = value;
     if (this.output) this.output.gain.setTargetAtTime(value * .62, this.context.currentTime, .025);
   }
 
   play(track, position) {
     this.stop();
     this.track = track;
+    if (track.previewUrl) {
+      if (this.media.src !== track.previewUrl) this.media.src = track.previewUrl;
+      this.media.currentTime = position;
+      return this.media.play();
+    }
     this.style = arrangements[track.album.category];
     this.interval = 60 / (track.album.bpm + track.order * 2) / this.style.steps;
     this.origin = this.context.currentTime + .055 - position;
@@ -56,10 +66,15 @@ class ArchiveAudio {
   }
 
   time() {
+    if (this.track?.previewUrl) {
+      if (Number.isFinite(this.media.duration)) this.track.duration = this.media.duration;
+      return this.media.ended ? this.track.duration : this.media.currentTime;
+    }
     return Math.max(0, this.context.currentTime - this.origin);
   }
 
   stop() {
+    this.media.pause();
     this.track = null;
     if (!this.context) return;
     const now = this.context.currentTime;
@@ -99,7 +114,7 @@ class ArchiveAudio {
   }
 
   schedule(lookahead = .24) {
-    if (!this.track) return;
+    if (!this.track || this.track.previewUrl) return;
     const now = this.context.currentTime;
     const { style, interval, track } = this;
     const bar = style.steps * 4;

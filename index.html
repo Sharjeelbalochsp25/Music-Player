@@ -10,8 +10,12 @@
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=Newsreader:ital,opsz,wght@0,6..72,400;1,6..72,400&family=Noto+Sans+JP:wght@500;800;900&display=swap">
   <link rel="stylesheet" href="ondo.css">
   <script src="catalog.js" defer></script>
+  <script src="featured-releases.js" defer></script>
+  <script src="featured-notes.js" defer></script>
+  <script src="featured-catalog.js" defer></script>
   <script src="audio.js" defer></script>
   <script src="ondo.js" defer></script>
+  <script src="discovery.js" defer></script>
 </head>
 <body>
   <header class="masthead">
@@ -25,16 +29,15 @@
   <main class="discovery" id="discovery">
     <div class="filters">
       <nav id="genres" aria-label="Filter by genre"></nav>
-      <span class="collection-label"><i></i> VOL. 01 <span>/</span> 1998–2026</span>
+      <span class="collection-label"><i></i> VOL. 01 <span>/</span> <time id="collection-years"></time></span>
     </div>
     <section class="archive" aria-label="Record archive">
       <div class="kanji kanji-left" lang="ja" aria-hidden="true">音楽</div>
       <div class="kanji kanji-right" lang="ja" aria-hidden="true">の記憶</div>
       <div class="archive-key" aria-hidden="true"><span>THE RECORD<br>COLLECTION</span><i></i><span lang="ja">音の記憶</span></div>
       <div class="archive-count" aria-hidden="true"><span id="archive-count">06 / 12</span><i></i><span>STEREO<br>33⅓ RPM</span></div>
-      <div id="stage" class="stage" aria-label="Browse record sleeves">
+      <div id="stage" class="stage" aria-label="Browse vinyl records">
         <div class="sleeve-shadow"></div><div id="records" class="records"></div>
-        <button class="floating icon-button" id="floating" data-action="featured-play" aria-label="Play selected album"></button>
       </div>
       <div class="feature">
         <button class="archive-arrow icon-button" data-action="previous-album" aria-label="Previous album" data-icon="left"></button>
@@ -70,6 +73,21 @@
       <footer><span>© ONDO — THE SOUND ARCHIVE</span><span>SOUND IS MEMORY <span class="footer-slash">/</span> <span lang="ja">音の記憶</span></span></footer>
     </div>
   </main>
+  <section class="listening-room" aria-label="Discover more music">
+    <div class="room-heading"><div><span class="eyebrow">Beyond the archive</span><h2>Good records.<br>On repeat.</h2></div><p>Find the voices you know and the next song you’ll keep coming back to.</p></div>
+    <section class="real-music" aria-labelledby="real-title">
+      <div class="section-heading"><h2 id="real-title">The listening room</h2><span>Artist releases &amp; official previews</span></div>
+      <form id="music-search"><label for="music-query">Find a song or artist</label><div><input id="music-query" type="search" value="The Weeknd" required maxlength="150" placeholder="Artist, album or song"><button class="filled-button">Search music ↗</button></div></form>
+      <div class="artist-shortcuts" id="artist-shortcuts"></div>
+      <p id="music-status" role="status"></p>
+      <div id="real-results" class="real-grid"></div>
+      <div id="preview-player" hidden><div><strong id="preview-title"></strong><span>Official preview · provided courtesy of iTunes</span></div><audio id="real-audio" controls preload="none"></audio><button id="close-preview" class="outline-button">Close preview</button></div>
+    </section>
+    <section><div class="section-heading"><h2>A soundtrack for every hour.</h2><button data-view="playlists">Explore playlists ↗</button></div><div class="home-playlists" id="home-playlists"></div></section>
+    <section class="artist-section"><div class="section-heading"><h2>Featured artists</h2><button data-view="artists">All artists ↗</button></div><div class="home-artists" id="home-artists"></div></section>
+    <section class="collection-callout"><span class="eyebrow">Make yourself at home</span><h2>Your taste.<br>Your collection.</h2><p>Keep the records and tracks you love together. Your saved archive is ready whenever you return.</p><button class="filled-button" data-view="saved">Open saved music ↗</button></section>
+    <footer class="room-footer"><strong>ONDO®</strong><span>SOUND IS MEMORY / 音の記憶</span><a href="#discovery">Back to the records ↑</a></footer>
+  </section>
   <dialog id="sheet" class="sheet" aria-labelledby="sheet-title">
     <header class="sheet-top">
       <div><button id="close-sheet" class="outline-button" data-action="close">Close <span lang="ja">/ 閉じる</span></button><button id="back-sheet" class="outline-button" data-action="back">← Back</button></div>
@@ -78,7 +96,6 @@
     <div id="sheet-content" class="sheet-content"></div>
     <div class="sheet-player"><span id="sheet-track"></span><button class="icon-button primary-play" data-action="toggle" aria-label="Play" data-icon="play"></button><button class="icon-button" data-action="next-track" aria-label="Next track" data-icon="next"></button><button class="icon-button" data-view="now" aria-label="Expanded player" data-icon="expand"></button></div>
   </dialog>
-  <div class="cursor" id="cursor" aria-hidden="true"><i></i><span></span></div>
   <div class="status" id="status" role="status"></div>
 </body>
 </html>

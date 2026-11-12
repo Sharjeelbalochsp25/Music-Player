@@ -9,7 +9,6 @@ const formatTime = seconds => Math.floor(seconds / 60) + ':' + String(Math.floor
 const pad = number => String(number).padStart(2, '0');
 const easing = 'cubic-bezier(.2,.8,.2,1)';
 const motion = matchMedia('(prefers-reduced-motion: reduce)');
-const finePointer = matchMedia('(pointer: fine)');
 const images = (url, label = '') => `<img src="${url}" alt="${escapeHtml(label)}" draggable="false">`;
 const icons = {
   play:'<path d="m9 5 11 7-11 7z" fill="currentColor" stroke="none"/>',
@@ -37,15 +36,20 @@ const setIcon = (button, name) => {
   }
 };
 
-const initialAlbum = albums[5];
+const archiveCatalog = mainCatalog.length ? mainCatalog : albums;
+const initialQueue = archiveCatalog.flatMap(album => album.tracks);
+const initialAlbum = archiveCatalog[0];
+const firstYear = Math.min(1998, ...archiveCatalog.map(album => album.year));
+const lastYear = Math.max(2026, ...archiveCatalog.map(album => album.year));
+const yearSpan = lastYear - firstYear;
 const savedKey = 'ondo-saved-v1';
 let initialSaved;
 try { initialSaved = JSON.parse(localStorage.getItem(savedKey)); } catch { /* storage may be unavailable */ }
 const saved = new Set(Array.isArray(initialSaved) ? initialSaved.filter(item => typeof item === 'string') : []);
 const state = {
-  category: genres[0], collection: albums, album: initialAlbum, position: 17, target: 17,
-  hover: null, drag: null, wheel: null, pointer: { x:0, y:0, cx:0, cy:0, tiltX:0, tiltY:0 },
-  queue: initialAlbum.tracks, index:0, elapsed:0, playing:false, pending:false, hasPlayed:false, volume:.65, lastVolume:.65,
+  category: genres[0], collection: archiveCatalog, album: initialAlbum, position: 0, target: 0,
+  drag: null, wheel: null,
+  archiveQueue:initialQueue, queue:initialQueue, index:0, elapsed:0, playing:false, pending:false, volume:.65, lastVolume:.65,
   shuffle:false, shuffleHistory:[], repeat:0, saved, views:[], query:'', playbackRequest:0
 };
 const track = () => state.queue[state.index];
@@ -54,8 +58,6 @@ const recordContainer = $('#records');
 const caption = $('#caption');
 const sheet = $('#sheet');
 const content = $('#sheet-content');
-const cursor = $('#cursor');
-const floating = $('#floating');
 const marker = $('#year-marker');
 const audio = new ArchiveAudio();
 let records = [];
@@ -75,17 +77,14 @@ function animate(node, keyframes, options) {
 }
 
 function makeRecords() {
-  const count = state.collection.length;
-  const copies = count === albums.length ? 3 : Math.max(3, Math.ceil(25 / count));
-  recordContainer.innerHTML = sequence(count * copies, virtual => {
-    const album = state.collection[virtual % count];
+  recordContainer.innerHTML = state.collection.map((album, virtual) => {
     const control = `type="button" tabindex="-1" data-action="record" aria-label="${escapeHtml(album.title)} by ${escapeHtml(album.artist)}"`;
-    return `<div class="record" data-record="${virtual}" style="--spine:${album.palette[0]};--spine-ink:${album.palette[1]}">
+    return `<div class="record" data-record="${virtual}" data-album="${album.id}" aria-hidden="true" style="--spine:${album.palette[0]};--spine-ink:${album.palette[1]}">
       <button class="spine" ${control} aria-hidden="true"><span>${escapeHtml(album.title)} · ${escapeHtml(album.artist)}</span><b>${pad(album.index+1)}</b></button>
-      <button class="front" ${control}>${images(album.art)}</button>
-      <button class="reverse" ${control} aria-hidden="true">${images(album.art)}</button></div>`;
-  });
-  records = [...recordContainer.children].map(node => ({ node, front:node.querySelector('.front'), lift:0, visible:false }));
+      <button class="front" ${control}></button>
+      <button class="reverse" ${control} aria-hidden="true"></button></div>`;
+  }).join('');
+  records = [...recordContainer.children].map(node => ({ node, front:node.querySelector('.front'), visible:false }));
   measureArchive();
 }
 
@@ -103,19 +102,11 @@ function measureArchive() {
   requestFrame();
 }
 
-function paintArchive(dt) {
+function paintArchive() {
   const { height, perspective, falloff, integral, width } = dimensions;
   const mobile = width < 768;
   const spacing = height * .13;
   const opening = height * (.94 - .095 + 1.4 * .035);
-  const pointer = state.pointer;
-  const follow = motion.matches ? 1 : 1 - Math.exp(-12 * dt);
-  const tilt = state.hover !== null && Math.abs(relative(state.hover - state.position, records.length)) < .12 && !state.drag && !motion.matches;
-  const aimX = tilt ? clamp((pointer.stageY - .5) * -13, -5, 5) : 0;
-  const aimY = tilt ? clamp((pointer.x / width - .5) * 38, -8, 8) : 0;
-  pointer.tiltX += (aimX - pointer.tiltX) * follow;
-  pointer.tiltY += (aimY - pointer.tiltY) * follow;
-  let settling = Math.abs(aimX - pointer.tiltX) + Math.abs(aimY - pointer.tiltY) > .025;
   const centered = wrap(Math.round(state.target), records.length);
   const limit = state.collection.length === 1 ? .55 : mobile ? 7.5 : 11.5;
   for (const [virtual, record] of records.entries()) {
@@ -125,10 +116,16 @@ function paintArchive(dt) {
     if (visible !== record.visible) {
       record.visible = visible;
       record.node.style.visibility = visible ? 'visible' : 'hidden';
+      record.node.setAttribute('aria-hidden', String(!visible));
+      if (visible && !record.front.firstChild) {
+        const artwork = images(state.collection[virtual].art.replace('600x600bb','300x300bb'));
+        record.front.innerHTML = artwork;
+        record.node.querySelector('.reverse').innerHTML = artwork;
+      }
+      if (!visible) record.front.tabIndex = -1;
     }
-    record.front.tabIndex = virtual === centered && visible ? 0 : -1;
-    record.node.setAttribute('aria-hidden', String(!visible));
     if (!visible) continue;
+    record.front.tabIndex = virtual === centered ? 0 : -1;
     const centerBlend = Math.max(0, 1 - distance);
     const open = centerBlend * centerBlend * (3 - 2 * centerBlend);
     const arc = distance < 1 ? (r + Math.sin(Math.PI * r) / Math.PI) / 2 : Math.sign(r) / 2;
@@ -138,16 +135,13 @@ function paintArchive(dt) {
     const k = 1 / scale;
     const index = Math.floor(magnitude / 2);
     const screenX = integral[index] + (integral[index + 1] - integral[index]) * (magnitude / 2 - index);
-    const liftGoal = virtual === state.hover && !state.drag && distance > .3 && !motion.matches ? 1 : 0;
-    record.lift += (liftGoal - record.lift) * follow;
-    settling ||= Math.abs(liftGoal - record.lift) > .025;
     const x = Math.sign(u) * screenX * k * (mobile ? .75 : 1);
-    const y = (height * .21 * (1 - scale) + open * height * .012 - record.lift * height * .05) * k;
+    const y = (height * .21 * (1 - scale) + open * height * .012) * k;
     const z = perspective * (1 - k) + open * height * .1;
-    const rotateY = (90 + Math.sign(u) * Math.min(1, magnitude / falloff) * 26) * (1 - open) + pointer.tiltY * open;
-    record.node.style.transform = `translate3d(${x.toFixed(2)}px,${y.toFixed(2)}px,${z.toFixed(2)}px) rotateX(${(pointer.tiltX * open).toFixed(2)}deg) rotateY(${rotateY.toFixed(2)}deg)`;
+    const rotateY = (90 + Math.sign(u) * Math.min(1, magnitude / falloff) * 26) * (1 - open);
+    record.node.style.transform = `translate3d(${x.toFixed(2)}px,${y.toFixed(2)}px,${z.toFixed(2)}px) rotateY(${rotateY.toFixed(2)}deg)`;
     record.node.style.zIndex = String(80 - Math.round(distance * 5));
-    record.node.style.setProperty('--spine-shade', Math.min(.6, open * .55 + (1 - scale) * .32 - record.lift * .09).toFixed(3));
+    record.node.style.setProperty('--spine-shade', Math.min(.6, open * .55 + (1 - scale) * .32).toFixed(3));
     record.node.style.setProperty('--cover-shade', ((1 - open) * .82).toFixed(3));
   }
   const position = Math.floor(state.position);
@@ -156,16 +150,15 @@ function paintArchive(dt) {
   const to = state.collection[wrap(position + 1, size)].year;
   const blend = state.position - position;
   const year = to < from ? (blend < .5 ? from : to) : from + (to - from) * blend;
-  marker.style.left = (year - 1998) / 28 * 100 + '%';
-  return settling;
+  marker.style.left = (year - firstYear) / yearSpan * 100 + '%';
 }
 
 function paintCaption(direction = 1) {
   const album = state.album;
   const lines = [
     ['h1', 'caption-title', escapeHtml(album.title)],
-    ['div', 'caption-artist', `<button data-view="artist" data-id="${album.id}">${escapeHtml(album.artist)}</button>`],
-    ['div', 'caption-subtitle', `<span lang="ja">${album.japanese}</span> / ${escapeHtml(album.title)}`],
+    ['div', 'caption-artist', artistLink(album)],
+    ['div', 'caption-subtitle', `<span lang="ja">${album.japanese}</span>`],
     ['div', 'caption-meta', `${album.year} — ${album.genre}`]
   ];
   if (!caption.children.length) {
@@ -194,41 +187,49 @@ function paintCaption(direction = 1) {
   $('[data-action="next-album"]').disabled = single;
 }
 
-function selectPosition(next) {
+function selectPosition(next, play = true) {
   const previous = state.target;
   state.target = Math.round(next);
   const album = state.collection[wrap(state.target, state.collection.length)];
   if (album !== state.album) {
     state.album = album;
     paintCaption(Math.sign(state.target - previous) || 1);
-    if (!state.hasPlayed && !state.pending && state.elapsed === 0) setQueue(album.tracks, 0, false);
-    updatePlaybackControls();
+    if (play) setQueue(state.archiveQueue, state.archiveQueue.indexOf(album.tracks[0]));
   }
   renderArchive = true;
   requestFrame();
 }
 
-function selectAlbum(album) {
+function selectAlbum(album, play = true) {
   const index = state.collection.indexOf(album);
   if (index === -1) return;
   const base = Math.round(state.target);
-  selectPosition(base + relative(index - base, state.collection.length));
+  selectPosition(base + relative(index - base, state.collection.length), play);
 }
 
 function changeCategory(category) {
   if (category === state.category) return;
   state.category = category;
-  state.collection = category === genres[0] ? albums : albums.filter(album => album.category === category);
+  state.collection = category === genres[0] ? archiveCatalog : archiveCatalog.filter(album => album.category === category);
+  if (!state.collection.length) state.collection = albums.filter(album => album.category === category);
   const current = state.collection.includes(state.album) ? state.album : state.collection[0];
   state.position = state.collection.length + state.collection.indexOf(current) - (motion.matches ? 0 : .24);
   state.target = Math.round(state.position);
+  const changed = current !== state.album;
   state.album = current;
-  state.hover = null;
+  const wasArchiveQueue = state.queue === state.archiveQueue;
+  state.archiveQueue = state.collection.flatMap(album => album.tracks);
   clearTimeout(state.wheel);
   state.wheel = null;
   makeRecords();
   paintCaption();
-  if (!state.hasPlayed && !state.pending && state.elapsed === 0) setQueue(current.tracks, 0, false);
+  if (changed) {
+    setQueue(state.archiveQueue, state.archiveQueue.indexOf(current.tracks[0]));
+  } else if (wasArchiveQueue && state.archiveQueue.includes(track())) {
+    state.index = state.archiveQueue.indexOf(track());
+    state.queue = state.archiveQueue;
+    state.shuffleHistory = [];
+  }
   updatePlaybackControls();
   $$('#genres button').forEach(button => button.setAttribute('aria-pressed', String(button.dataset.id === category)));
   animate(recordContainer,[{ clipPath:'inset(0 44% 0 44%)' },{ clipPath:'inset(0)' }],{ duration:540 });
@@ -255,24 +256,23 @@ function updateFrame(timestamp) {
     state.target -= delta;
     state.position -= delta;
   }
-  if (renderArchive || traveling) renderArchive = paintArchive(dt);
-  let pointerMoving = false;
-  if (cursor.classList.contains('show')) {
-    const pointer = state.pointer;
-    const follow = 1 - Math.exp(-16 * dt);
-    pointer.cx += (pointer.x - pointer.cx) * follow;
-    pointer.cy += (pointer.y - pointer.cy) * follow;
-    cursor.style.transform = `translate(${pointer.cx - 29}px,${pointer.cy - 29}px)`;
-    pointerMoving = Math.abs(pointer.x - pointer.cx) + Math.abs(pointer.y - pointer.cy) > .2;
+  if (renderArchive || traveling) {
+    paintArchive();
+    renderArchive = false;
   }
   if (state.playing) tickPlayback(.26);
-  if (traveling || renderArchive || pointerMoving || state.playing) requestFrame();
+  if (traveling || renderArchive || state.playing) requestFrame();
   else lastFrame = 0;
 }
 
 function seek(position) {
   state.elapsed = clamp(position, 0, track().duration);
-  if (state.playing) audio.play(track(), state.elapsed);
+  if (state.playing) {
+    Promise.resolve(audio.play(track(), state.elapsed)).catch(() => {
+      stopPlayback();
+      notify('Preview could not resume. Press Play to try again.');
+    });
+  }
   updateProgress();
 }
 
@@ -308,8 +308,15 @@ function updatePlaybackControls() {
   const artist = $('#player-artist');
   artist.textContent = album.artist;
   artist.dataset.view = 'artist';
-  artist.dataset.id = album.id;
+  artist.dataset.id = album.artistAlbumId || album.id;
   $('#sheet-track').textContent = current.name + ' · ' + album.artist;
+  const source = $('#playback-source');
+  if (source) {
+    source.hidden = !current.storeUrl;
+    if (current.storeUrl) {
+      source.innerHTML = `Preview courtesy of <a href="${escapeHtml(current.storeUrl)}" target="_blank" rel="noopener noreferrer" aria-label="Open ${escapeHtml(current.name)} on iTunes">iTunes ↗</a>`;
+    }
+  }
   const expanded = $('.expanded-player');
   if (expanded) {
     const art = expanded.querySelector('img');
@@ -318,15 +325,14 @@ function updatePlaybackControls() {
     $('#sheet-title').textContent = current.name;
     const expandedArtist = expanded.querySelector('.artist-link');
     expandedArtist.textContent = album.artist;
-    expandedArtist.dataset.id = album.id;
+    expandedArtist.dataset.id = album.artistAlbumId || album.id;
     expanded.querySelector('[data-kind="track"]').dataset.id = current.id;
   }
   document.body.classList.toggle('is-playing', playing);
-  for (const button of $$('[data-action="toggle"],[data-action="featured-play"]')) {
-    const featured = button === floating;
-    const active = playing && (!featured || album === state.album);
-    setIcon(button, active ? 'pause' : 'play');
-    button.setAttribute('aria-label', featured ? (active ? 'Pause selected album' : 'Play selected album') : (active ? 'Pause' : 'Play'));
+  records.forEach(record => record.node.classList.toggle('vinyl-playing', playing && record.node.dataset.album === album.id));
+  for (const button of $$('[data-action="toggle"]')) {
+    setIcon(button, playing ? 'pause' : 'play');
+    button.setAttribute('aria-label', playing ? 'Pause' : 'Play');
   }
   $$('[data-action="shuffle"]').forEach(button => button.setAttribute('aria-pressed', String(state.shuffle)));
   $$('[data-action="repeat"]').forEach(button => {
@@ -363,15 +369,16 @@ function notify(message) {
 }
 
 async function startPlayback() {
+  document.querySelector('#real-audio')?.pause();
   const request = ++state.playbackRequest;
   state.pending = true;
   try {
-    await audio.prepare(state.volume);
+    await audio.prepare(state.volume, track());
     if (request !== state.playbackRequest) return;
     if (state.elapsed >= track().duration) state.elapsed = 0;
-    audio.play(track(), state.elapsed);
+    await audio.play(track(), state.elapsed);
+    if (request !== state.playbackRequest) return;
     state.playing = true;
-    state.hasPlayed = true;
     requestFrame();
   } catch {
     if (request !== state.playbackRequest) return;
@@ -404,6 +411,7 @@ function setQueue(queue, index, play = true) {
   state.queue = queue;
   state.index = index;
   state.elapsed = 0;
+  selectAlbum(track().album, false);
   updatePlaybackControls();
   if (play) void startPlayback();
 }
@@ -433,7 +441,7 @@ function moveTrack(direction, automatic = false) {
     return;
   }
   next = automatic || direction > 0 ? wrap(next, queue.length) : Math.max(0, next);
-  setQueue(queue, next, automatic || playing || pending);
+  setQueue(queue, next, automatic || playing || pending || queue === state.archiveQueue);
 }
 
 function tickPlayback(lookahead) {
@@ -464,7 +472,7 @@ const iconButton = (action, symbol, label, attributes = '') =>
 const saveButton = (kind,id) =>
   iconButton('save','heart','Save '+kind,`data-kind="${kind}" data-id="${id}" aria-pressed="false"`);
 const artistLink = (album, className = 'artist-link') =>
-  `<button class="${className}" data-view="artist" data-id="${album.id}">${escapeHtml(album.artist)}</button>`;
+  `<button class="${className}" data-view="artist" data-id="${album.artistAlbumId || album.id}">${escapeHtml(album.artist)}</button>`;
 const intro = (title, eyebrow, subtitle = '') =>
   `<div class="sheet-intro"><span class="eyebrow">${eyebrow}</span><h1 id="sheet-title">${title}</h1>${subtitle ? `<p>${subtitle}</p>` : ''}</div>`;
 const playButton = (label, id, queue) =>
@@ -512,12 +520,16 @@ function trackList(tracks, queue, id, showAlbums = false) {
     </li>`).join('')}</ol>`;
 }
 
+function photoCredit(credit) {
+  return `<p class="photo-credit">Photo by <a href="${credit.source}">${escapeHtml(credit.author)}</a> · <a href="${credit.licenseUrl}">${credit.license}</a> · Display cropped</p>`;
+}
+
 function card(item, type) {
   const artist = type === 'artist';
   const playlist = type === 'playlist';
   const title = artist ? item.artist : item.title;
   const art = artist ? item.portrait : item.art;
-  const meta = artist ? item.genre + ' / ' + item.location :
+  const meta = artist ? (item.artistAlbumId ? item.genre : item.genre + ' / ' + item.location) :
     playlist ? `${item.tracks.length} TRACKS / ${trackTotal(item.tracks)}` : item.artist + ' / ' + item.year;
   return `<article class="card">
     <button class="card-main" data-view="${type}" data-id="${item.id}">
@@ -525,26 +537,27 @@ function card(item, type) {
       <span class="card-name">${escapeHtml(title)} <span aria-hidden="true">↗</span></span>
       <span class="card-meta">${escapeHtml(meta)}</span>
     </button>
+    ${artist && item.portraitCredit ? photoCredit(item.portraitCredit) : ''}
     ${playlist ? `<p>${escapeHtml(item.description)}</p><div class="card-actions">${iconButton('play-queue','play','Play '+title,`data-queue="playlist" data-id="${item.id}" data-index="0"`)}${saveButton(type,item.id)}</div>` :
       artist ? '' : `<div class="card-actions">${saveButton(type,item.id)}</div>`}
   </article>`;
 }
 
-function detailArt(url, label, captionText, ink) {
+function detailArt(url, label, captionText, ink, credit) {
   const labelText = escapeHtml(label);
   const artwork = ink ? `<svg class="ink-art" viewBox="0 0 800 800" role="img" aria-label="${labelText}">
     <defs><filter id="bleed" x="-25%" y="-25%" width="150%" height="150%"><feTurbulence type="fractalNoise" baseFrequency=".027" numOctaves="3" seed="26" result="noise"/><feDisplacementMap in="SourceGraphic" in2="noise" scale="45" xChannelSelector="R" yChannelSelector="G"/></filter>
     <mask id="ink-mask"><g filter="url(#bleed)">${[[250,313],[574,546],[400,100],[147,690],[678,225],[437,768],[382,425]].map(([x,y])=>circle(x,y,0,'white')).join('')}</g></mask></defs>
     <image href="${url}" width="800" height="800" mask="url(#ink-mask)"/></svg>` : images(url,label);
-  return `<figure class="detail-visual">${artwork}<figcaption class="art-caption">${captionText}</figcaption></figure>`;
+  return `<figure class="detail-visual">${artwork}<figcaption class="art-caption">${captionText}</figcaption>${credit ? photoCredit(credit) : ''}</figure>`;
 }
 
 function albumDetail(album, ink) {
   return `<div class="detail"><div class="detail-copy">
     <span class="eyebrow" lang="ja">${album.japanese}</span><h1 id="sheet-title">${escapeHtml(album.title)}</h1>
-    ${artistLink(album)}<p class="detail-meta">${album.year} / ${album.genre} / ${album.tracks.length} tracks</p>
+    ${artistLink(album)}<p class="detail-meta">${album.year} / ${album.genre} / ${album.tracks.length} ${album.tracks.length === 1 ? 'track' : 'tracks'}</p>
     <p>${escapeHtml(album.description)}</p>
-    <div class="detail-actions">${playButton('Play Album',album.id,'album')}${saveButton('album',album.id)}</div>
+    <div class="detail-actions">${playButton(album.artistAlbumId ? 'Play Preview' : 'Play Album',album.id,'album')}${saveButton('album',album.id)}</div>
     <h2>Tracklist</h2>${trackList(album.tracks,'album',album.id)}
     </div>${detailArt(album.art,album.title+' album artwork','ONDO RECORDS / ARCHIVE NO. '+String(album.index+1).padStart(3,'0'),ink)}</div>`;
 }
@@ -564,11 +577,12 @@ function artistDetail(album) {
     Math.abs(a.year-album.year) - Math.abs(b.year-album.year)).slice(0,3);
   return `<div class="detail"><div class="detail-copy">
     <span class="eyebrow">Artist profile / アーティスト</span><h1 id="sheet-title">${escapeHtml(album.artist)}</h1>
-    <span class="eyebrow">${album.genre} / ${album.location}</span>
+    <span class="eyebrow">${album.artistAlbumId ? album.genre : album.genre + ' / ' + album.location}</span>
     <p>${escapeHtml(album.bio)}</p><div class="detail-actions">${playButton('Play Artist',album.id,'album')}</div>
     <h2>Popular tracks</h2>${trackList(album.tracks,'album',album.id)}
     <h2>Featured album</h2><button class="search-result" data-view="album" data-id="${album.id}">${images(album.art)}${escapeHtml(album.title)}<small>${album.year} ↗</small></button>
-    </div>${detailArt(album.portrait,album.artist+' illustration',album.location)}</div>
+    </div>${detailArt(album.portrait,album.artist + (album.portraitCredit ? ' photograph' : ' artwork'),
+      album.artistAlbumId ? album.artist : album.location, false, album.portraitCredit)}</div>
     <h2>Related artists</h2><div class="card-grid">${related.map(item=>card(item,'artist')).join('')}</div>`;
 }
 
@@ -607,7 +621,7 @@ function paintSearch() {
   const groups = [
     ['Albums', albums.filter(item => matches(item.title,item.genre,item.category,item.japanese)).map(item =>
       result(item.title,item.art,item.genre,`data-view="album" data-id="${item.id}"`))],
-    ['Artists', albums.filter(item => matches(item.artist,item.genre)).map(item =>
+    ['Artists', [...featuredArtists,...albums].filter(item => matches(item.artist,item.genre)).map(item =>
       result(item.artist,item.portrait,item.location,`data-view="artist" data-id="${item.id}"`))],
     ['Tracks', [...trackById.values()].filter(item => matches(item.name)).map(item =>
       result(item.name,item.album.art,item.album.artist,`data-action="search-track" data-id="${item.id}"`))],
@@ -625,9 +639,9 @@ const viewTemplates = {
   playlists: () => intro('Playlists','Curated for listening','Collections of sound for every state of mind.') +
     `<div class="card-grid">${playlists.map(item=>card(item,'playlist')).join('')}</div>`,
   artists: () => intro('The Artists','Artist index / アーティスト','The voices behind the sound.') +
-    `<div class="card-grid">${albums.map(item=>card(item,'artist')).join('')}</div>`,
+    `<div class="card-grid">${[...featuredArtists,...albums].map(item=>card(item,'artist')).join('')}</div>`,
   about: () => intro('About ONDO','音の記憶 / Memories of sound') +
-    '<p>ONDO is a fictional record collection spanning 1998 to 2026. Its twelve sleeves hold forty-eight original procedural tracks, from ambient tape tones to brushed jazz and deep house.</p><p>Browse the archive by sleeve, genre or release year. The music is synthesized as you listen.</p>',
+    '<p>Browse official music previews on vinyl by track, genre or release year. The original ONDO playlists also feature synthesized tracks.</p>',
   menu: () => intro('Archive menu','ONDO') +
     '<button class="menu-item" data-action="discover">Discover <span>↗</span></button>' +
     [['playlists','Playlists'],['artists','Artists'],['search','Search'],['saved','Saved music'],['about','About']].map(([type,label]) =>
@@ -685,10 +699,6 @@ function openView(type, id, trigger, rect) {
   renderView(ink);
   if (fresh) sheet.showModal();
   sheet.scrollTop = 0;
-  cursor.classList.remove('show');
-  state.hover = null;
-  renderArchive = true;
-  requestFrame();
   const start = rect ? clipRectangle(rect) : 'inset(12% 0 0 0)';
   sheetAnimation = animate(sheet,[{clipPath:start},{clipPath:'inset(0)'}],
     {duration:ink?1050:320,easing:ink?'cubic-bezier(.76,0,.18,1)':easing});
@@ -758,7 +768,9 @@ function queueFromButton(button) {
 function clickRecord(button) {
   if (performance.now() < suppressClickUntil) return;
   const virtual = Number(button.closest('[data-record]').dataset.record);
-  if (virtual === wrap(Math.round(state.target),records.length)) {
+  const selected = virtual === wrap(Math.round(state.target), records.length);
+  const centered = Math.abs(relative(virtual - state.position, records.length)) < .15;
+  if (selected && centered && button.classList.contains('front')) {
     openSelected(button);
   } else {
     selectPosition(state.target + relative(virtual - state.target, records.length));
@@ -774,7 +786,6 @@ const actions = {
   'previous-album': () => selectPosition(state.target-1),
   year: button => selectAlbum(nearestYear(Number(button.dataset.id))),
   record: clickRecord,
-  'featured-play': () => track().album === state.album ? togglePlayback() : setQueue(state.album.tracks,0),
   toggle: togglePlayback,
   'next-track': () => moveTrack(1),
   'previous-track': () => moveTrack(-1),
@@ -839,14 +850,11 @@ document.addEventListener('keydown', event => {
   } else if (!sheet.open && (event.key === 'ArrowLeft' || event.key === 'ArrowRight') && state.collection.length > 1) {
     event.preventDefault();
     selectPosition(state.target + (event.key === 'ArrowRight' ? 1 : -1));
-  } else if (!sheet.open && event.key === 'Enter' && !onButton && !event.repeat) {
-    event.preventDefault();
-    openSelected(records[wrap(state.target,records.length)].front);
   }
 });
 
 stage.addEventListener('pointerdown', event => {
-  if (event.button !== 0 || !event.isPrimary || state.collection.length < 2 || event.target.closest('#floating')) return;
+  if (event.button !== 0 || !event.isPrimary || state.collection.length < 2) return;
   if (state.wheel) {
     clearTimeout(state.wheel);
     state.wheel = null;
@@ -863,6 +871,7 @@ stage.addEventListener('pointermove', event => {
     if (!drag.moved && Math.abs(dx) > 6 && Math.abs(dx) > Math.abs(dy)) {
       drag.moved = true;
       stage.setPointerCapture(event.pointerId);
+      stage.classList.add('dragging');
     }
     if (drag.moved) {
       const sensitivity = clamp(dimensions.height * .29, 48, 90);
@@ -870,35 +879,13 @@ stage.addEventListener('pointermove', event => {
       requestFrame();
     }
   }
-  if (!finePointer.matches || motion.matches || event.pointerType !== 'mouse') return;
-  const pointer = state.pointer;
-  pointer.x = event.clientX;
-  pointer.y = event.clientY;
-  pointer.stageY = (event.clientY - stage.getBoundingClientRect().top) / stage.clientHeight;
-  const cursorWasHidden = !cursor.classList.contains('show');
-  if (cursorWasHidden) {
-    pointer.cx = pointer.x;
-    pointer.cy = pointer.y;
-  }
-  const record = event.target.closest('[data-record]');
-  state.hover = record && !drag?.moved ? Number(record.dataset.record) : null;
-  const play = event.target.closest('#floating') && !drag?.moved;
-  const selected = state.hover === wrap(Math.round(state.target),records.length) && Math.abs(state.target-state.position) < .15;
-  cursor.classList.add('show');
-  cursor.classList.toggle('spine-hover',state.hover !== null && !selected);
-  cursor.classList.toggle('open-hover',selected);
-  cursor.classList.toggle('play-hover',!!play);
-  const label = cursor.lastElementChild;
-  const text = play ? (state.playing && track().album === state.album ? 'PAUSE' : 'PLAY') : 'OPEN\n開く';
-  if (label.textContent !== text) label.textContent = text;
-  renderArchive = true;
-  requestFrame();
 });
 
 function endDrag(event) {
   const drag = state.drag;
   if (!drag || drag.id !== event.pointerId) return;
   state.drag = null;
+  stage.classList.remove('dragging');
   if (drag.moved) {
     suppressClickUntil = performance.now() + 300;
     selectPosition(state.target);
@@ -908,12 +895,6 @@ function endDrag(event) {
 window.addEventListener('pointerup',endDrag);
 window.addEventListener('pointercancel',endDrag);
 stage.addEventListener('lostpointercapture',endDrag);
-stage.addEventListener('pointerleave', () => {
-  state.hover = null;
-  cursor.classList.remove('show');
-  renderArchive = true;
-  requestFrame();
-});
 
 stage.addEventListener('wheel', event => {
   if (state.collection.length < 2 || event.ctrlKey || state.drag?.moved) return;
@@ -935,29 +916,30 @@ stage.addEventListener('wheel', event => {
 },{passive:false});
 
 function initialize() {
+  $('#collection-years').textContent = `${firstYear}–${lastYear}`;
+  $('.player').insertAdjacentHTML('afterend','<p id="playback-source" class="playback-source" hidden></p>');
   $$('[data-icon]').forEach(button => setIcon(button,button.dataset.icon));
   $('#genres').innerHTML = genres.map((genre,index) =>
     `<button data-action="category" data-id="${genre}" aria-pressed="${index === 0}">${genre}</button>`).join('');
   const scale = $('#timeline-scale');
-  scale.insertAdjacentHTML('beforeend',sequence(29,index => {
-    const year = 1998 + index;
-    const major = year % 5 === 0 || index === 0 || index === 28;
-    const mobile = [1998,2005,2015,2026].includes(year);
-    return `<button class="timeline-tick${major?' major':''}${mobile?' mobile-year':''}" style="--year:${index/28*100}%"
+  scale.insertAdjacentHTML('beforeend',sequence(yearSpan + 1,index => {
+    const year = firstYear + index;
+    const major = year % 5 === 0 || index === 0 || index === yearSpan;
+    const mobile = [firstYear,2005,2015,lastYear].includes(year);
+    return `<button class="timeline-tick${major?' major':''}${mobile?' mobile-year':''}" style="--year:${index/yearSpan*100}%"
       data-action="year" data-id="${year}" ${major?'':'tabindex="-1"'} aria-label="Find album closest to ${year}"><i></i>${major?`<span>${year}</span>`:''}</button>`;
   }));
   scale.addEventListener('click',event => {
     if (event.target.closest('button')) return;
     const rect = scale.getBoundingClientRect();
-    selectAlbum(nearestYear(1998 + (event.clientX - rect.left) / rect.width * 28));
+    selectAlbum(nearestYear(firstYear + (event.clientX - rect.left) / rect.width * yearSpan));
   });
   makeRecords();
   paintCaption();
-  paintArchive(1 / 60);
+  paintArchive();
   updatePlaybackControls();
   new ResizeObserver(measureArchive).observe(stage);
   motion.addEventListener('change', () => {
-    cursor.classList.remove('show');
     renderArchive = true;
     requestFrame();
   });
